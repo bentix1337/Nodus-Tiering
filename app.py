@@ -85,7 +85,7 @@ def get_completed_cars():
 
 
 # --- Page Config ---
-st.set_page_config(page_title="Car Re-Tier", page_icon="🏎️", layout="centered")
+st.set_page_config(page_title="Nodus Vehicle Re-Tiering", page_icon="🏎️", layout="centered")
 
 # --- Mobile-First CSS ---
 st.markdown("""
@@ -202,8 +202,8 @@ with tab_review:
     if not st.session_state.reviewer:
         st.markdown("""
         <div class="login-card">
-            <h2>Car Re-Tiering Tool</h2>
-            <p>Enter your name to start reviewing</p>
+            <h2>Nodus Re-Tiering Tool</h2>
+            <p>Thank you guys so much in advance for helping us making the city better. Please enter your name to start reviewing <3 </p>
         </div>
         """, unsafe_allow_html=True)
         name = st.text_input("Your name", label_visibility="collapsed", placeholder="Your name...")

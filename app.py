@@ -54,6 +54,36 @@ def get_reviewer_progress(reviewer_name, filtered_cars):
     return all_reviewed & filtered_names
 
 
+def get_completed_cars():
+    """Cars are completed (removed from review) when:
+    - 3 people voted the same tier, OR
+    - 5 people have voted regardless of spread
+    """
+    conn = get_db()
+    cursor = conn.execute("""
+        SELECT spawn_name, new_tier, COUNT(DISTINCT reviewer_name) as cnt
+        FROM car_reviews
+        GROUP BY spawn_name, new_tier
+    """)
+    # Check for 3 agreeing on same tier
+    consensus_done = set()
+    for row in cursor.fetchall():
+        if row[2] >= 3:
+            consensus_done.add(row[0])
+
+    # Check for 5 total unique voters
+    cursor2 = conn.execute("""
+        SELECT spawn_name, COUNT(DISTINCT reviewer_name) as cnt
+        FROM car_reviews
+        GROUP BY spawn_name
+        HAVING cnt >= 5
+    """)
+    volume_done = {row[0] for row in cursor2.fetchall()}
+
+    conn.close()
+    return consensus_done | volume_done
+
+
 # --- Page Config ---
 st.set_page_config(page_title="Car Re-Tier", page_icon="🏎️", layout="centered")
 
@@ -196,16 +226,17 @@ with tab_review:
             st.session_state.car_index = 0
             st.rerun()
 
-        # Filtered car list
+        # Filtered car list (exclude completed cars)
+        completed = get_completed_cars()
         if st.session_state.tier_filter == "All":
-            filtered_cars = CAR_LIST
+            filtered_cars = [c for c in CAR_LIST if c["spawn_name"] not in completed]
         else:
-            filtered_cars = [c for c in CAR_LIST if c["tier"] == st.session_state.tier_filter]
+            filtered_cars = [c for c in CAR_LIST if c["tier"] == st.session_state.tier_filter and c["spawn_name"] not in completed]
 
         total = len(filtered_cars)
 
         if total == 0:
-            st.info("No cars in this tier.")
+            st.info("All cars in this tier are done!")
         else:
             reviewed = get_reviewer_progress(reviewer_name, filtered_cars)
             done = len(reviewed)
@@ -316,10 +347,12 @@ with tab_results:
         if df.empty:
             st.info("No reviews yet.")
         else:
-            c1, c2, c3 = st.columns(3)
+            completed = get_completed_cars()
+            c1, c2, c3, c4 = st.columns(4)
             c1.metric("Reviews", len(df))
             c2.metric("Cars", df["spawn_name"].nunique())
-            c3.metric("Reviewers", df["reviewer_name"].nunique())
+            c3.metric("Completed", len(completed))
+            c4.metric("Reviewers", df["reviewer_name"].nunique())
 
             st.markdown("### Consensus")
             consensus_data = []

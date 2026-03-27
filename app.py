@@ -82,20 +82,21 @@ st.markdown("""
         margin: 0.4rem 0;
         word-break: break-all;
     }
-    .car-meta {
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        gap: 0.5rem;
-        flex-wrap: wrap;
-        margin-top: 0.4rem;
+    .car-info {
+        color: #9ca3af;
+        font-size: 0.85rem;
+        margin-top: 0.3rem;
+    }
+    .car-info span {
+        margin: 0 0.3rem;
     }
     .tb {
         display: inline-block;
-        padding: 0.2rem 0.9rem;
-        border-radius: 6px;
+        padding: 0.15rem 0.7rem;
+        border-radius: 5px;
         font-weight: 700;
-        font-size: 0.85rem;
+        font-size: 0.8rem;
+        vertical-align: middle;
     }
     .tb-s { background: #dc2626; color: #fff; }
     .tb-a { background: #f59e0b; color: #000; }
@@ -103,21 +104,7 @@ st.markdown("""
     .tb-c { background: #10b981; color: #fff; }
     .tb-special { background: #0ea5e9; color: #fff; }
     .tb-misc { background: #64748b; color: #fff; }
-    .sub-badge {
-        color: #6b7280;
-        font-size: 0.75rem;
-        border: 1px solid #374151;
-        border-radius: 4px;
-        padding: 0.15rem 0.5rem;
-    }
-    .reviewed-tag {
-        background: #065f46;
-        color: #6ee7b7;
-        font-size: 0.7rem;
-        font-weight: 700;
-        padding: 0.15rem 0.5rem;
-        border-radius: 4px;
-    }
+
     .prog {
         background: #1e2028;
         border-radius: 10px;
@@ -131,6 +118,7 @@ st.markdown("""
     .prog-text { color: #9ca3af; font-size: 0.75rem; white-space: nowrap; }
     .prog-track { flex: 1; background: #2d3139; border-radius: 4px; height: 6px; }
     .prog-fill { background: linear-gradient(90deg, #3b82f6, #8b5cf6); border-radius: 4px; height: 6px; }
+
     div.stButton > button {
         border-radius: 12px !important;
         font-weight: 700 !important;
@@ -141,12 +129,14 @@ st.markdown("""
         -webkit-tap-highlight-color: transparent;
     }
     div.stButton > button:active { transform: scale(0.97); }
+
     .stTabs [data-baseweb="tab-list"] { gap: 4px; justify-content: center; }
     .stTabs [data-baseweb="tab"] {
         background-color: #1a1d24; border-radius: 8px 8px 0 0;
         padding: 0.5rem 1rem; color: #9ca3af; font-size: 0.85rem;
     }
     .stTabs [aria-selected="true"] { background-color: #2d3139; color: #e6e9ef; }
+
     .login-card {
         background: linear-gradient(135deg, #1a1d24 0%, #13161c 100%);
         border: 1px solid #2d3139; border-radius: 16px;
@@ -171,11 +161,7 @@ TIER_COLORS = {
     "S": "tb-s", "A": "tb-a", "B": "tb-b",
     "C": "tb-c", "Special": "tb-special", "Misc": "tb-misc",
 }
-
-# Available tiers to assign
 ASSIGNABLE_TIERS = ["S", "A", "B", "C", "Special"]
-
-# Tiers available for filtering
 FILTER_TIERS = ["All", "S", "A", "B", "C", "Special", "Misc"]
 
 # --- Tabs ---
@@ -198,7 +184,7 @@ with tab_review:
     else:
         reviewer_name = st.session_state.reviewer
 
-        # Tier filter selector
+        # Tier filter
         selected_filter = st.selectbox(
             "Filter by tier",
             FILTER_TIERS,
@@ -210,7 +196,7 @@ with tab_review:
             st.session_state.car_index = 0
             st.rerun()
 
-        # Build filtered car list
+        # Filtered car list
         if st.session_state.tier_filter == "All":
             filtered_cars = CAR_LIST
         else:
@@ -224,7 +210,7 @@ with tab_review:
             reviewed = get_reviewer_progress(reviewer_name, filtered_cars)
             done = len(reviewed)
 
-            # Progress bar
+            # Progress
             pct = (done / total) * 100
             st.markdown(f"""
             <div class="prog">
@@ -234,33 +220,28 @@ with tab_review:
             </div>
             """, unsafe_allow_html=True)
 
-            idx = st.session_state.car_index
-            idx = max(0, min(idx, total - 1))
+            idx = max(0, min(st.session_state.car_index, total - 1))
             st.session_state.car_index = idx
 
             car = filtered_cars[idx]
             spawn = car["spawn_name"]
             tier = car["tier"]
             subclass = car["subclass"]
-            already_reviewed = spawn in reviewed
             tier_class = TIER_COLORS.get(tier, "tb-misc")
 
-            reviewed_html = '<span class="reviewed-tag">DONE</span>' if already_reviewed else ""
-
-            # Car card — name, current tier, classification
+            # Car card — spawn name + tier & category only
             st.markdown(f"""
             <div class="car-hero">
                 <div class="car-counter">#{idx + 1} of {total}</div>
                 <div class="car-name">{spawn}</div>
-                <div class="car-meta">
+                <div class="car-info">
                     <span class="tb {tier_class}">{tier}</span>
-                    <span class="sub-badge">{subclass}</span>
-                    {reviewed_html}
+                    <span>{subclass}</span>
                 </div>
             </div>
             """, unsafe_allow_html=True)
 
-            # Tier buttons — S, A, B, C in top row, Special + Keep in bottom row
+            # Tier buttons — S A B C in one row, Special below
             st.markdown("<div style='text-align:center;color:#6b7280;font-size:0.8rem;margin-bottom:0.4rem;'>Assign tier:</div>", unsafe_allow_html=True)
 
             row1 = st.columns(4)
@@ -272,19 +253,11 @@ with tab_review:
                             st.session_state.car_index = idx + 1
                         st.rerun()
 
-            row2 = st.columns(2)
-            with row2[0]:
-                if st.button("Special", key=f"t_Special_{idx}", use_container_width=True):
-                    save_review(spawn, tier, subclass, "Special", reviewer_name)
-                    if idx < total - 1:
-                        st.session_state.car_index = idx + 1
-                    st.rerun()
-            with row2[1]:
-                if st.button(f"Keep {tier}", key=f"keep_{idx}", use_container_width=True):
-                    save_review(spawn, tier, subclass, tier, reviewer_name)
-                    if idx < total - 1:
-                        st.session_state.car_index = idx + 1
-                    st.rerun()
+            if st.button("Special", key=f"t_Special_{idx}", use_container_width=True):
+                save_review(spawn, tier, subclass, "Special", reviewer_name)
+                if idx < total - 1:
+                    st.session_state.car_index = idx + 1
+                st.rerun()
 
             # Navigation
             st.markdown("")
@@ -324,12 +297,6 @@ with tab_review:
                     if st.button("Go", use_container_width=True):
                         st.session_state.car_index = jump - 1
                         st.rerun()
-
-        # Switch user (always visible)
-        st.markdown("")
-        if st.button("Switch user", key="logout"):
-            st.session_state.reviewer = ""
-            st.rerun()
 
 
 # ====== RESULTS TAB (password protected) ======

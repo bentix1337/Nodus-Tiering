@@ -56,8 +56,8 @@ def get_reviewer_progress(reviewer_name, filtered_cars):
 
 def get_completed_cars():
     """Cars are completed (removed from review) when:
-    - 3 people voted the same tier, OR
-    - 5 people have voted regardless of spread
+    - 5 people voted the same tier, OR
+    - 8 people have voted regardless of spread
     """
     conn = get_db()
     cursor = conn.execute("""
@@ -65,18 +65,18 @@ def get_completed_cars():
         FROM car_reviews
         GROUP BY spawn_name, new_tier
     """)
-    # Check for 3 agreeing on same tier
+    # Check for 5 agreeing on same tier
     consensus_done = set()
     for row in cursor.fetchall():
-        if row[2] >= 3:
+        if row[2] >= 5:
             consensus_done.add(row[0])
 
-    # Check for 5 total unique voters
+    # Check for 6 total unique voters
     cursor2 = conn.execute("""
         SELECT spawn_name, COUNT(DISTINCT reviewer_name) as cnt
         FROM car_reviews
         GROUP BY spawn_name
-        HAVING cnt >= 5
+        HAVING cnt >= 6
     """)
     volume_done = {row[0] for row in cursor2.fetchall()}
 

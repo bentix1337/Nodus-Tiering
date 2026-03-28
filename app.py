@@ -203,7 +203,11 @@ with tab_review:
         st.markdown("""
         <div class="login-card">
             <h2>Nodus Re-Tiering Tool</h2>
-            <p>Thank you guys so much in advance for helping us making the city better. Please enter your name to start reviewing <3 </p>
+            <p>Thank you guys so much in advance for helping us making the city better. 
+            For the quickest and easiest process open this website on your phone and look at the cars on your PC :) Please read the guidelines provided in the discord and use those as a baseline but I trust you to take the right decision in cases outside of that. 
+
+            Please enter your name to start reviewing <3 
+            </p>
         </div>
         """, unsafe_allow_html=True)
         name = st.text_input("Your name", label_visibility="collapsed", placeholder="Your name...")

@@ -1,5 +1,5 @@
 import streamlit as st
-import libsql_experimental as libsql
+import libsql_client
 import pandas as pd
 import shutil
 import base64
@@ -8,52 +8,49 @@ from datetime import datetime
 from car_data import CAR_LIST
 
 # --- Database Setup ---
-TURSO_URL = st.secrets["TURSO_URL"]
+TURSO_URL = st.secrets["TURSO_URL"].replace("libsql://", "https://")
 TURSO_TOKEN = st.secrets["TURSO_TOKEN"]
 
 
-def get_db():
-    conn = libsql.connect("car_reviews.db", sync_url=TURSO_URL, auth_token=TURSO_TOKEN)
-    conn.sync()
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS car_reviews (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            spawn_name TEXT NOT NULL,
-            original_tier TEXT NOT NULL,
-            original_subclass TEXT NOT NULL,
-            new_tier TEXT NOT NULL,
-            reviewer_name TEXT NOT NULL,
-            timestamp TEXT NOT NULL
-        )
-    """)
-    conn.commit()
-    conn.sync()
-    return conn
+def _client():
+    return libsql_client.create_client_sync(url=TURSO_URL, auth_token=TURSO_TOKEN)
+
+
+def init_db():
+    with _client() as client:
+        client.execute("""
+            CREATE TABLE IF NOT EXISTS car_reviews (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                spawn_name TEXT NOT NULL,
+                original_tier TEXT NOT NULL,
+                original_subclass TEXT NOT NULL,
+                new_tier TEXT NOT NULL,
+                reviewer_name TEXT NOT NULL,
+                timestamp TEXT NOT NULL
+            )
+        """)
 
 
 def save_review(spawn_name, original_tier, original_subclass, new_tier, reviewer_name):
-    conn = get_db()
-    conn.execute(
-        "INSERT INTO car_reviews (spawn_name, original_tier, original_subclass, new_tier, reviewer_name, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
-        (spawn_name, original_tier, original_subclass, new_tier, reviewer_name, datetime.now().isoformat()),
-    )
-    conn.commit()
-    conn.sync()
+    with _client() as client:
+        client.execute(
+            "INSERT INTO car_reviews (spawn_name, original_tier, original_subclass, new_tier, reviewer_name, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
+            [spawn_name, original_tier, original_subclass, new_tier, reviewer_name, datetime.now().isoformat()],
+        )
 
 
 def get_all_reviews():
-    conn = get_db()
-    df = pd.read_sql_query("SELECT * FROM car_reviews ORDER BY id", conn)
-    return df
+    with _client() as client:
+        rs = client.execute("SELECT id, spawn_name, original_tier, original_subclass, new_tier, reviewer_name, timestamp FROM car_reviews ORDER BY id")
+        if not rs.rows:
+            return pd.DataFrame(columns=["id", "spawn_name", "original_tier", "original_subclass", "new_tier", "reviewer_name", "timestamp"])
+        return pd.DataFrame(rs.rows, columns=["id", "spawn_name", "original_tier", "original_subclass", "new_tier", "reviewer_name", "timestamp"])
 
 
 def get_reviewer_progress(reviewer_name, filtered_cars):
-    conn = get_db()
-    cursor = conn.execute(
-        "SELECT DISTINCT spawn_name FROM car_reviews WHERE reviewer_name = ?",
-        (reviewer_name,),
-    )
-    all_reviewed = {row[0] for row in cursor.fetchall()}
+    with _client() as client:
+        rs = client.execute("SELECT DISTINCT spawn_name FROM car_reviews WHERE reviewer_name = ?", [reviewer_name])
+        all_reviewed = {row[0] for row in rs.rows}
     filtered_names = {c["spawn_name"] for c in filtered_cars}
     return all_reviewed & filtered_names
 
@@ -63,28 +60,29 @@ def get_completed_cars():
     - 3 people voted the same tier, OR
     - 5 people have voted regardless of spread
     """
-    conn = get_db()
-    cursor = conn.execute("""
-        SELECT spawn_name, new_tier, COUNT(DISTINCT reviewer_name) as cnt
-        FROM car_reviews
-        GROUP BY spawn_name, new_tier
-    """)
-    # Check for 3 agreeing on same tier
-    consensus_done = set()
-    for row in cursor.fetchall():
-        if row[2] >= 3:
-            consensus_done.add(row[0])
+    with _client() as client:
+        # 3 agreeing on same tier
+        rs1 = client.execute("""
+            SELECT spawn_name, new_tier, COUNT(DISTINCT reviewer_name) as cnt
+            FROM car_reviews
+            GROUP BY spawn_name, new_tier
+        """)
+        consensus_done = {row[0] for row in rs1.rows if row[2] >= 3}
 
-    # Check for 5 total unique voters
-    cursor2 = conn.execute("""
-        SELECT spawn_name, COUNT(DISTINCT reviewer_name) as cnt
-        FROM car_reviews
-        GROUP BY spawn_name
-        HAVING cnt >= 5
-    """)
-    volume_done = {row[0] for row in cursor2.fetchall()}
+        # 5 total unique voters
+        rs2 = client.execute("""
+            SELECT spawn_name, COUNT(DISTINCT reviewer_name) as cnt
+            FROM car_reviews
+            GROUP BY spawn_name
+            HAVING cnt >= 5
+        """)
+        volume_done = {row[0] for row in rs2.rows}
 
     return consensus_done | volume_done
+
+
+# Initialize table on startup
+init_db()
 
 
 # --- Page Config ---
@@ -445,13 +443,11 @@ with tab_results:
                 del_spawn = st.text_input("Spawn name (blank = all for reviewer):")
                 if st.button("Delete", type="primary"):
                     if del_reviewer:
-                        conn = get_db()
-                        if del_spawn:
-                            conn.execute("DELETE FROM car_reviews WHERE reviewer_name = ? AND spawn_name = ?", (del_reviewer, del_spawn))
-                        else:
-                            conn.execute("DELETE FROM car_reviews WHERE reviewer_name = ?", (del_reviewer,))
-                        conn.commit()
-                        conn.sync()
+                        with _client() as client:
+                            if del_spawn:
+                                client.execute("DELETE FROM car_reviews WHERE reviewer_name = ? AND spawn_name = ?", [del_reviewer, del_spawn])
+                            else:
+                                client.execute("DELETE FROM car_reviews WHERE reviewer_name = ?", [del_reviewer])
                         st.success("Deleted.")
                         st.rerun()
 
@@ -477,14 +473,12 @@ with tab_results:
                     if not required_cols.issubset(set(imported_df.columns)):
                         st.error(f"CSV missing columns: {required_cols - set(imported_df.columns)}")
                     else:
-                        conn = get_db()
-                        for _, row in imported_df.iterrows():
-                            conn.execute(
-                                "INSERT INTO car_reviews (spawn_name, original_tier, original_subclass, new_tier, reviewer_name, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
-                                (row["spawn_name"], row["original_tier"], row["original_subclass"], row["new_tier"], row["reviewer_name"], row["timestamp"]),
-                            )
-                        conn.commit()
-                        conn.sync()
+                        with _client() as client:
+                            for _, row in imported_df.iterrows():
+                                client.execute(
+                                    "INSERT INTO car_reviews (spawn_name, original_tier, original_subclass, new_tier, reviewer_name, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
+                                    [row["spawn_name"], row["original_tier"], row["original_subclass"], row["new_tier"], row["reviewer_name"], row["timestamp"]],
+                                )
                         st.success(f"Restored {len(imported_df)} votes.")
                         st.rerun()
                 except Exception as e:

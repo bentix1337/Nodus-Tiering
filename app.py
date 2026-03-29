@@ -405,11 +405,39 @@ with tab_results:
             consensus_df = pd.DataFrame(consensus_data)
             st.dataframe(consensus_df, use_container_width=True, hide_index=True)
 
+            # Build clean export CSV
+            export_data = []
+            for spawn in df["spawn_name"].unique():
+                car_reviews = df[df["spawn_name"] == spawn]
+                orig_tier = car_reviews["original_tier"].iloc[0]
+                orig_subclass = car_reviews["original_subclass"].iloc[0]
+                tier_votes = car_reviews["new_tier"].value_counts().to_dict()
+                majority = max(tier_votes, key=tier_votes.get)
+                n_voters = len(car_reviews)
+                unanimous = "Yes" if len(tier_votes) == 1 and n_voters > 1 else ("Pending" if n_voters == 1 else "No")
+                changed = "Yes" if majority != orig_tier else "No"
+
+                row = {
+                    "Spawn Name": spawn,
+                    "Original Tier": orig_tier,
+                    "Subclass": orig_subclass,
+                    "New Tier": majority,
+                    "Changed": changed,
+                    "Agreement": unanimous,
+                    "Total Votes": n_voters,
+                }
+                # Add individual reviewer columns
+                for _, r in car_reviews.iterrows():
+                    row[r["reviewer_name"]] = r["new_tier"]
+                export_data.append(row)
+
+            export_df = pd.DataFrame(export_data)
+
             dl1, dl2 = st.columns(2)
             with dl1:
-                st.download_button("All Reviews CSV", df.to_csv(index=False), "reviews.csv", "text/csv", use_container_width=True)
+                st.download_button("Export Results CSV", export_df.to_csv(index=False), "retiering_results.csv", "text/csv", use_container_width=True)
             with dl2:
-                st.download_button("Consensus CSV", consensus_df.to_csv(index=False), "consensus.csv", "text/csv", use_container_width=True)
+                st.download_button("Raw Votes CSV", df.to_csv(index=False), "raw_votes.csv", "text/csv", use_container_width=True)
 
             with st.expander("Admin"):
                 st.warning("Permanently delete reviews.")
@@ -427,29 +455,32 @@ with tab_results:
                         st.success("Deleted.")
                         st.rerun()
 
-        # Database backup/restore (always visible when unlocked)
+        # Backup & Restore (always visible when unlocked)
         st.markdown("---")
-        st.markdown("### Database Backup & Restore")
+        st.markdown("### Backup & Restore")
 
-        dl_db, ul_db = st.columns(2)
-        with dl_db:
-            try:
-                with open(DB_PATH, "rb") as f:
-                    st.download_button(
-                        "Download Database",
-                        f.read(),
-                        "car_reviews.db",
-                        "application/octet-stream",
-                        use_container_width=True,
-                    )
-            except FileNotFoundError:
-                st.info("No database yet.")
+        st.download_button(
+            "Download Backup CSV",
+            get_all_reviews().to_csv(index=False) if not get_all_reviews().empty else "",
+            "backup_votes.csv",
+            "text/csv",
+            use_container_width=True,
+            disabled=get_all_reviews().empty,
+        )
 
-        with ul_db:
-            uploaded = st.file_uploader("Upload .db", type=["db"], label_visibility="collapsed")
-            if uploaded is not None:
-                if st.button("Restore", use_container_width=True, type="primary"):
-                    with open(DB_PATH, "wb") as f:
-                        f.write(uploaded.getbuffer())
-                    st.success("Database restored.")
-                    st.rerun()
+        uploaded = st.file_uploader("Upload backup CSV to restore", type=["csv"], label_visibility="collapsed")
+        if uploaded is not None:
+            if st.button("Restore from CSV", use_container_width=True, type="primary"):
+                try:
+                    imported_df = pd.read_csv(uploaded)
+                    required_cols = {"spawn_name", "original_tier", "original_subclass", "new_tier", "reviewer_name", "timestamp"}
+                    if not required_cols.issubset(set(imported_df.columns)):
+                        st.error(f"CSV missing columns: {required_cols - set(imported_df.columns)}")
+                    else:
+                        conn = get_db()
+                        imported_df[list(required_cols)].to_sql("car_reviews", conn, if_exists="append", index=False)
+                        conn.close()
+                        st.success(f"Restored {len(imported_df)} votes.")
+                        st.rerun()
+                except Exception as e:
+                    st.error(f"Import failed: {e}")

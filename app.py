@@ -1,6 +1,9 @@
 import streamlit as st
 import sqlite3
 import pandas as pd
+import shutil
+import base64
+from pathlib import Path
 from datetime import datetime
 from car_data import CAR_LIST
 
@@ -56,8 +59,8 @@ def get_reviewer_progress(reviewer_name, filtered_cars):
 
 def get_completed_cars():
     """Cars are completed (removed from review) when:
-    - 5 people voted the same tier, OR
-    - 8 people have voted regardless of spread
+    - 3 people voted the same tier, OR
+    - 5 people have voted regardless of spread
     """
     conn = get_db()
     cursor = conn.execute("""
@@ -65,18 +68,18 @@ def get_completed_cars():
         FROM car_reviews
         GROUP BY spawn_name, new_tier
     """)
-    # Check for 5 agreeing on same tier
+    # Check for 3 agreeing on same tier
     consensus_done = set()
     for row in cursor.fetchall():
-        if row[2] >= 5:
+        if row[2] >= 3:
             consensus_done.add(row[0])
 
-    # Check for 6 total unique voters
+    # Check for 5 total unique voters
     cursor2 = conn.execute("""
         SELECT spawn_name, COUNT(DISTINCT reviewer_name) as cnt
         FROM car_reviews
         GROUP BY spawn_name
-        HAVING cnt >= 6
+        HAVING cnt >= 5
     """)
     volume_done = {row[0] for row in cursor2.fetchall()}
 
@@ -85,7 +88,7 @@ def get_completed_cars():
 
 
 # --- Page Config ---
-st.set_page_config(page_title="Nodus Vehicle Re-Tiering", page_icon="🏎️", layout="centered")
+st.set_page_config(page_title="Car Re-Tier", page_icon="🏎️", layout="centered")
 
 # --- Mobile-First CSS ---
 st.markdown("""
@@ -174,8 +177,23 @@ st.markdown("""
     }
     .login-card h2 { color: #e6e9ef; font-size: 1.2rem; margin-bottom: 0.5rem; }
     .login-card p { color: #6b7280; font-size: 0.85rem; }
+    .top-logo {
+        position: fixed;
+        top: 10px;
+        left: 12px;
+        z-index: 9999;
+        width: 36px;
+        height: auto;
+        opacity: 0.9;
+    }
 </style>
 """, unsafe_allow_html=True)
+
+# --- Logo ---
+logo_path = Path(__file__).parent / "logo.png"
+if logo_path.exists():
+    logo_b64 = base64.b64encode(logo_path.read_bytes()).decode()
+    st.markdown(f'<img src="data:image/png;base64,{logo_b64}" class="top-logo">', unsafe_allow_html=True)
 
 # --- Session State ---
 if "car_index" not in st.session_state:
@@ -202,11 +220,8 @@ with tab_review:
     if not st.session_state.reviewer:
         st.markdown("""
         <div class="login-card">
-            <h2>Nodus Re-Tiering Tool</h2>
-            <p>Thank you guys so much in advance for helping us making the city better. 
-            For the quickest and easiest process open this website on your phone and look at the cars on your PC :) Please read the guidelines provided in the discord and use those as a baseline but I trust you to take the right decision in cases outside of that. 
-
-            Please enter your name to start reviewing <3
+            <h2>Car Re-Tiering Tool</h2>
+            <p>Enter your name to start reviewing</p>
         </div>
         """, unsafe_allow_html=True)
         name = st.text_input("Your name", label_visibility="collapsed", placeholder="Your name...")
@@ -351,11 +366,23 @@ with tab_results:
             st.info("No reviews yet.")
         else:
             completed = get_completed_cars()
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Reviews", len(df))
-            c2.metric("Cars", df["spawn_name"].nunique())
-            c3.metric("Completed", len(completed))
-            c4.metric("Reviewers", df["reviewer_name"].nunique())
+            total_cars = len(CAR_LIST)
+            done_count = len(completed)
+            done_pct = (done_count / total_cars) * 100 if total_cars > 0 else 0
+
+            # Overall progress bar
+            st.markdown(f"""
+            <div class="prog" style="margin-bottom:1rem;">
+                <span class="prog-text">{done_count}/{total_cars} completed</span>
+                <div class="prog-track"><div class="prog-fill" style="width:{done_pct:.1f}%"></div></div>
+                <span class="prog-text">{done_pct:.0f}%</span>
+            </div>
+            """, unsafe_allow_html=True)
+
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Total Votes", len(df))
+            c2.metric("Cars Voted On", df["spawn_name"].nunique())
+            c3.metric("Reviewers", df["reviewer_name"].nunique())
 
             st.markdown("### Consensus")
             consensus_data = []
@@ -399,3 +426,30 @@ with tab_results:
                         conn.close()
                         st.success("Deleted.")
                         st.rerun()
+
+        # Database backup/restore (always visible when unlocked)
+        st.markdown("---")
+        st.markdown("### Database Backup & Restore")
+
+        dl_db, ul_db = st.columns(2)
+        with dl_db:
+            try:
+                with open(DB_PATH, "rb") as f:
+                    st.download_button(
+                        "Download Database",
+                        f.read(),
+                        "car_reviews.db",
+                        "application/octet-stream",
+                        use_container_width=True,
+                    )
+            except FileNotFoundError:
+                st.info("No database yet.")
+
+        with ul_db:
+            uploaded = st.file_uploader("Upload .db", type=["db"], label_visibility="collapsed")
+            if uploaded is not None:
+                if st.button("Restore", use_container_width=True, type="primary"):
+                    with open(DB_PATH, "wb") as f:
+                        f.write(uploaded.getbuffer())
+                    st.success("Database restored.")
+                    st.rerun()

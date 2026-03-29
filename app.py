@@ -1,5 +1,5 @@
 import streamlit as st
-import sqlite3
+import libsql_experimental as libsql
 import pandas as pd
 import shutil
 import base64
@@ -8,11 +8,13 @@ from datetime import datetime
 from car_data import CAR_LIST
 
 # --- Database Setup ---
-DB_PATH = "car_reviews.db"
+TURSO_URL = st.secrets["TURSO_URL"]
+TURSO_TOKEN = st.secrets["TURSO_TOKEN"]
 
 
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
+    conn = libsql.connect("car_reviews.db", sync_url=TURSO_URL, auth_token=TURSO_TOKEN)
+    conn.sync()
     conn.execute("""
         CREATE TABLE IF NOT EXISTS car_reviews (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -25,6 +27,7 @@ def get_db():
         )
     """)
     conn.commit()
+    conn.sync()
     return conn
 
 
@@ -35,13 +38,12 @@ def save_review(spawn_name, original_tier, original_subclass, new_tier, reviewer
         (spawn_name, original_tier, original_subclass, new_tier, reviewer_name, datetime.now().isoformat()),
     )
     conn.commit()
-    conn.close()
+    conn.sync()
 
 
 def get_all_reviews():
     conn = get_db()
     df = pd.read_sql_query("SELECT * FROM car_reviews ORDER BY id", conn)
-    conn.close()
     return df
 
 
@@ -52,7 +54,6 @@ def get_reviewer_progress(reviewer_name, filtered_cars):
         (reviewer_name,),
     )
     all_reviewed = {row[0] for row in cursor.fetchall()}
-    conn.close()
     filtered_names = {c["spawn_name"] for c in filtered_cars}
     return all_reviewed & filtered_names
 
@@ -83,7 +84,6 @@ def get_completed_cars():
     """)
     volume_done = {row[0] for row in cursor2.fetchall()}
 
-    conn.close()
     return consensus_done | volume_done
 
 
@@ -451,7 +451,7 @@ with tab_results:
                         else:
                             conn.execute("DELETE FROM car_reviews WHERE reviewer_name = ?", (del_reviewer,))
                         conn.commit()
-                        conn.close()
+                        conn.sync()
                         st.success("Deleted.")
                         st.rerun()
 
@@ -478,8 +478,13 @@ with tab_results:
                         st.error(f"CSV missing columns: {required_cols - set(imported_df.columns)}")
                     else:
                         conn = get_db()
-                        imported_df[list(required_cols)].to_sql("car_reviews", conn, if_exists="append", index=False)
-                        conn.close()
+                        for _, row in imported_df.iterrows():
+                            conn.execute(
+                                "INSERT INTO car_reviews (spawn_name, original_tier, original_subclass, new_tier, reviewer_name, timestamp) VALUES (?, ?, ?, ?, ?, ?)",
+                                (row["spawn_name"], row["original_tier"], row["original_subclass"], row["new_tier"], row["reviewer_name"], row["timestamp"]),
+                            )
+                        conn.commit()
+                        conn.sync()
                         st.success(f"Restored {len(imported_df)} votes.")
                         st.rerun()
                 except Exception as e:

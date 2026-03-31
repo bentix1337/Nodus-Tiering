@@ -134,6 +134,8 @@ st.markdown("""
     .tb-b { background: #3b82f6; color: #fff; }
     .tb-c { background: #10b981; color: #fff; }
     .tb-special { background: #0ea5e9; color: #fff; }
+    .tb-motorcycle { background: #f97316; color: #fff; }
+    .tb-electric { background: #22d3ee; color: #000; }
     .tb-misc { background: #64748b; color: #fff; }
 
     .prog {
@@ -205,10 +207,12 @@ if "results_unlocked" not in st.session_state:
 
 TIER_COLORS = {
     "S": "tb-s", "A": "tb-a", "B": "tb-b",
-    "C": "tb-c", "Special": "tb-special", "Misc": "tb-misc",
+    "C": "tb-c", "Special": "tb-special",
+    "Motorcycle": "tb-motorcycle", "Electric": "tb-electric",
+    "Misc": "tb-misc",
 }
-ASSIGNABLE_TIERS = ["S", "A", "B", "C", "Special"]
-FILTER_TIERS = ["All", "S", "A", "B", "C", "Special", "Misc"]
+ASSIGNABLE_TIERS = ["S", "A", "B", "C", "Special", "Motorcycle", "Electric"]
+FILTER_TIERS = ["All", "S", "A", "B", "C", "Special", "Motorcycle", "Electric", "Misc"]
 
 # --- Tabs ---
 tab_review, tab_results = st.tabs(["Review", "Results"])
@@ -242,12 +246,13 @@ with tab_review:
             st.session_state.car_index = 0
             st.rerun()
 
-        # Filtered car list (exclude completed cars)
+        # Filtered car list (exclude completed cars, sorted alphabetically with numbers first)
         completed = get_completed_cars()
         if st.session_state.tier_filter == "All":
             filtered_cars = [c for c in CAR_LIST if c["spawn_name"] not in completed]
         else:
             filtered_cars = [c for c in CAR_LIST if c["tier"] == st.session_state.tier_filter and c["spawn_name"] not in completed]
+        filtered_cars.sort(key=lambda c: (not c["spawn_name"][0].isdigit(), c["spawn_name"].lower()))
 
         total = len(filtered_cars)
 
@@ -288,7 +293,7 @@ with tab_review:
             </div>
             """, unsafe_allow_html=True)
 
-            # Tier buttons — S A B C in one row, Special below
+            # Tier buttons
             st.markdown("<div style='text-align:center;color:#6b7280;font-size:0.8rem;margin-bottom:0.4rem;'>Assign tier:</div>", unsafe_allow_html=True)
 
             row1 = st.columns(4)
@@ -300,11 +305,14 @@ with tab_review:
                             st.session_state.car_index = idx + 1
                         st.rerun()
 
-            if st.button("Special", key=f"t_Special_{idx}", use_container_width=True):
-                save_review(spawn, tier, subclass, "Special", reviewer_name)
-                if idx < total - 1:
-                    st.session_state.car_index = idx + 1
-                st.rerun()
+            row2 = st.columns(3)
+            for i, t in enumerate(["Special", "Motorcycle", "Electric"]):
+                with row2[i]:
+                    if st.button(t, key=f"t_{t}_{idx}", use_container_width=True):
+                        save_review(spawn, tier, subclass, t, reviewer_name)
+                        if idx < total - 1:
+                            st.session_state.car_index = idx + 1
+                        st.rerun()
 
             # Navigation
             st.markdown("")

@@ -136,7 +136,6 @@ st.markdown("""
     .tb-special { background: #0ea5e9; color: #fff; }
     .tb-motorcycle { background: #f97316; color: #fff; }
     .tb-electric { background: #22d3ee; color: #000; }
-    .tb-drag { background: #ef4444; color: #fff; }
     .tb-misc { background: #64748b; color: #fff; }
 
     .prog {
@@ -209,11 +208,11 @@ if "results_unlocked" not in st.session_state:
 TIER_COLORS = {
     "S": "tb-s", "A": "tb-a", "B": "tb-b",
     "C": "tb-c", "Special": "tb-special",
-    "Motorcycle": "tb-motorcycle", "Electric": "tb-electric", "Drag": "tb-drag",
+    "Motorcycle": "tb-motorcycle", "Electric": "tb-electric",
     "Misc": "tb-misc",
 }
-ASSIGNABLE_TIERS = ["S", "A", "B", "C", "Special", "Motorcycle", "Electric", "Drag"]
-FILTER_TIERS = ["All", "S", "A", "B", "C", "Special", "Motorcycle", "Electric", "Drag", "Misc"]
+ASSIGNABLE_TIERS = ["S", "A", "B", "C", "Special", "Motorcycle", "Electric"]
+FILTER_TIERS = ["All", "S", "A", "B", "C", "Special", "Motorcycle", "Electric", "Misc"]
 
 # --- Tabs ---
 tab_review, tab_results = st.tabs(["Review", "Results"])
@@ -306,8 +305,8 @@ with tab_review:
                             st.session_state.car_index = idx + 1
                         st.rerun()
 
-            row2 = st.columns(4)
-            for i, t in enumerate(["Special", "Motorcycle", "Electric", "Drag"]):
+            row2 = st.columns(3)
+            for i, t in enumerate(["Special", "Motorcycle", "Electric"]):
                 with row2[i]:
                     if st.button(t, key=f"t_{t}_{idx}", use_container_width=True):
                         save_review(spawn, tier, subclass, t, reviewer_name)
